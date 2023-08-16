@@ -58,6 +58,6 @@ To run the experiment on a SLURM cluster please refer to `run_on_SLURM_cluster.s
 num_nodes=5
 data = TemporalData(src=Tensor([0,1,2,3]),dst=Tensor([1,2,3,4]), t=..., msg=...)
 ```
-- To add new models, please include their implemetation in `models/ctdg_models.py` and the configuration that you want to evaluate in `conf.py`
-- To add new negative sampler, please extend the `NegativeSampler` class in `negative_sampler.py` 
+- To add a new model, please include the implemetation in `models/ctdg_models.py` and the configuration that you want to evaluate in `conf.py`
+- To add a new negative sampler, please extend the `NegativeSampler` class in `negative_sampler.py` 
 
