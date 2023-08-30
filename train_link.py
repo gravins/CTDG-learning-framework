@@ -12,16 +12,6 @@ import wandb
 import time
 import ray
 import os
-
-def compute_fake_score(conf):
-    scores=scoring([0,1,0,1], [1,0,1,0], torch.tensor([1., 0., 1., 0.]), is_regression=conf['link_regression'])
-    for k in scores:
-        if 'confusion' in k:
-            continue
-        scores[k] = -np.inf if not conf['link_regression'] else np.inf
-    scores['loss'] = -np.inf if not conf['link_regression'] else np.inf
-    scores['time'] = datetime.timedelta(seconds=1)
-    return scores
     
 
 def train(data, model, optimizer, train_loader, criterion, neighbor_loader, helper, train_neg_sampler=None, requires_grad=True, device='cpu'):
@@ -240,21 +230,16 @@ def link_prediction_single(model_instance, conf):
         model.reset_memory()
         neighbor_loader.reset_state()
 
-        try:
-            tr_scores, _ = eval(data=data, model=model, loader=train_loader, criterion=criterion, 
-                                neighbor_loader=neighbor_loader, neg_sampler=train_neg_link_sampler, helper=assoc, 
-                                eval_seed=conf['exp_seed'], device=device, eval_name='train_eval', wandb_log=conf['wandb'])
-            
-            if conf['reset_memory_eval']:
-                model.reset_memory()
-            vl_scores, vl_true_values = eval(data=data, model=model, loader=val_loader, criterion=criterion, 
-                                            neighbor_loader=neighbor_loader, neg_sampler=val_neg_link_sampler, 
-                                            helper=assoc, eval_seed=conf['exp_seed'], device=device,
-                                            eval_name='val_eval', wandb_log=conf['wandb'])
-        except ValueError as err:
-            print(err)
-            print(f'\n{conf} crashed.. continuing')
-            break
+        tr_scores, _ = eval(data=data, model=model, loader=train_loader, criterion=criterion, 
+                            neighbor_loader=neighbor_loader, neg_sampler=train_neg_link_sampler, helper=assoc, 
+                            eval_seed=conf['exp_seed'], device=device, eval_name='train_eval', wandb_log=conf['wandb'])
+        
+        if conf['reset_memory_eval']:
+            model.reset_memory()
+        vl_scores, vl_true_values = eval(data=data, model=model, loader=val_loader, criterion=criterion, 
+                                        neighbor_loader=neighbor_loader, neg_sampler=val_neg_link_sampler, 
+                                        helper=assoc, eval_seed=conf['exp_seed'], device=device,
+                                        eval_name='val_eval', wandb_log=conf['wandb'])
 
         history.append({
             'train': tr_scores,
@@ -287,34 +272,14 @@ def link_prediction_single(model_instance, conf):
             break
 
     # Evaluate on test
-    try:
-        if conf['debug']: print('Loading model at epoch {}...'.format(best_epoch))
-        ckpt = torch.load(path_save_best, map_location=device)
-        model.load_state_dict(ckpt['model_state_dict'])
-        ckpt['test_score'] = {}
-        ckpt['val_score'] = {}
-        ckpt['train_score'] = {}
-        ckpt['true_values'] = {}
-        ckpt['loss'] = {}
-    except:
-        if conf['use_all_strategies_eval']:
-            strategies = dst_strategies
-        else:
-            strategies = [conf['strategy']]
-
-        ckpt = {
-            'test_score': {},
-            'val_score': {},
-            'train_score': {}
-        }
-        scores = compute_fake_score(conf)
-        for s in strategies:
-            ckpt['test_score'][s] = scores
-            ckpt['val_score'][s] = scores
-            ckpt['train_score'][s] = scores
-        history = [{'train':scores, 'val':scores}]
-        return ckpt['test_score'], ckpt['val_score'], ckpt['train_score'], e, conf, history
-
+    if conf['debug']: print('Loading model at epoch {}...'.format(best_epoch))
+    ckpt = torch.load(path_save_best, map_location=device)
+    model.load_state_dict(ckpt['model_state_dict'])
+    ckpt['test_score'] = {}
+    ckpt['val_score'] = {}
+    ckpt['train_score'] = {}
+    ckpt['true_values'] = {}
+    ckpt['loss'] = {}
 
     if conf['use_all_strategies_eval']:
         strategies = dst_strategies
@@ -349,46 +314,25 @@ def link_prediction_single(model_instance, conf):
         model.reset_memory()
         neighbor_loader.reset_state()
 
-        fake_tr=False
-        try:
-            tr_scores, tr_true_values = eval(data=data, model=model, loader=train_loader, criterion=criterion, 
-                                            neighbor_loader=neighbor_loader, neg_sampler=tmp_train_neg_link_sampler, 
-                                            helper=assoc, eval_seed=conf['exp_seed'], device=device, 
-                                            eval_name='train_eval', wandb_log=conf['wandb'])
-        except:
-            ts_scores = compute_fake_score(conf)
-            vl_scores = compute_fake_score(conf)
-            tr_scores = compute_fake_score(conf)
-            tr_true_values, vl_true_values, ts_true_values = torch.tensor([-1, -1]), torch.tensor([-1, -1]), torch.tensor([-1, -1])
-            fake_tr=True
+        tr_scores, tr_true_values = eval(data=data, model=model, loader=train_loader, criterion=criterion, 
+                                        neighbor_loader=neighbor_loader, neg_sampler=tmp_train_neg_link_sampler, 
+                                        helper=assoc, eval_seed=conf['exp_seed'], device=device, 
+                                        eval_name='train_eval', wandb_log=conf['wandb'])
         
-        if not fake_tr: 
-            fake_vl=False
-            try:
-                if conf['reset_memory_eval']:
-                    model.reset_memory()
-                vl_scores, vl_true_values = eval(data=data, model=model, loader=val_loader, criterion=criterion, 
-                                                neighbor_loader=neighbor_loader, neg_sampler=tmp_val_neg_link_sampler, 
-                                                helper=assoc, eval_seed=conf['exp_seed'], device=device, 
-                                                eval_name='val_eval', wandb_log=conf['wandb'])
-            except:
-                ts_scores = compute_fake_score(conf)
-                vl_scores = compute_fake_score(conf)
-                vl_true_values, ts_true_values = torch.tensor([-1, -1]), torch.tensor([-1, -1])
-                fake_vl=True
-            
-            if not fake_vl:
-                try:
-                    if conf['reset_memory_eval']:
-                        model.reset_memory()
+        if conf['reset_memory_eval']:
+            model.reset_memory()
+        vl_scores, vl_true_values = eval(data=data, model=model, loader=val_loader, criterion=criterion, 
+                                        neighbor_loader=neighbor_loader, neg_sampler=tmp_val_neg_link_sampler, 
+                                        helper=assoc, eval_seed=conf['exp_seed'], device=device, 
+                                        eval_name='val_eval', wandb_log=conf['wandb'])
 
-                    ts_scores, ts_true_values = eval(data=data, model=model, loader=test_loader, criterion=criterion, 
-                                                    neighbor_loader=neighbor_loader, neg_sampler=tmp_test_neg_link_sampler, 
-                                                    helper=assoc, eval_seed=conf['exp_seed'], device=device, 
-                                                    eval_name='test_eval', wandb_log=conf['wandb'])
-                except:
-                    ts_scores = compute_fake_score(conf)
-                    ts_true_values = torch.tensor([-1, -1])
+        if conf['reset_memory_eval']:
+            model.reset_memory()
+
+        ts_scores, ts_true_values = eval(data=data, model=model, loader=test_loader, criterion=criterion, 
+                                        neighbor_loader=neighbor_loader, neg_sampler=tmp_test_neg_link_sampler, 
+                                        helper=assoc, eval_seed=conf['exp_seed'], device=device, 
+                                        eval_name='test_eval', wandb_log=conf['wandb'])
 
         ckpt['test_score'][strategy] = ts_scores
         ckpt['val_score'][strategy] = vl_scores
