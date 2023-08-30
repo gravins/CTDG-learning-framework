@@ -271,6 +271,42 @@ class TGAT(GenericModel):
 
     
 class EdgeBank(GenericModel):
+    def __init__(self, num_nodes, time_window: float = np.inf): 
+        # NOTE: best way to compute the time window: 
+        # time_window = int((train_timestamp.max() - train_timestamp.min()) * time_window_ratio)
+
+        super().__init__(num_nodes, memory=None, gnn=None, gnn_act=None, readout=None)
+        self.edgebank = {}
+        self.time_window = time_window
+        self.num_gnn_layers = torch.nn.parameter.Parameter(torch.tensor(0), requires_grad=False)
+    
+    def update(self, src, pos_dst, t, msg, src_emb, pos_dst_emb):
+        for s, d, tt in zip(src, pos_dst, t):
+            self.edgebank[(s.cpu().item(), d.cpu().item())] = tt.cpu().item() 
+
+    def _predict(self, src, dst, t):
+        prev_t = t - self.time_window
+        prev_t[prev_t < 0] = 0
+        out = torch.zeros(src.size())
+        for i, (s, d, tt) in enumerate(zip(src, dst, prev_t)):
+            if self.edgebank[(s.cpu().item(), d.cpu().item())] >= tt:
+                out[i] = 1
+            else:
+                out[i] = 0
+        return out.unsqueeze(1)
+
+    def forward(self, batch, n_id, msg, t, edge_index, id_mapper):
+        src, pos_dst = batch.src, batch.dst
+        neg_dst = batch.neg_dst if hasattr(batch, 'neg_dst') else None
+
+        pos_out = self._predict(src, pos_dst, batch.t)
+        neg_out = self._predict(src, neg_dst, batch.t) if neg_dst is not None else None
+        emb_src, emb_pos_dst = None, None
+
+        return pos_out, neg_out, emb_src, emb_pos_dst
+
+"""
+class EdgeBank(GenericModel):
     def __init__(self, num_nodes):
         super().__init__(num_nodes, memory=None, gnn=None, gnn_act=None, link_pred=None)
         self.num_gnn_layers = 0
@@ -288,3 +324,4 @@ class EdgeBank(GenericModel):
         emb_src, emb_pos_dst = None, None
 
         return pos_out.unsqueeze(1), neg_out.unsqueeze(1), emb_src, emb_pos_dst
+"""
