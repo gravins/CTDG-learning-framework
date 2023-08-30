@@ -22,6 +22,7 @@ class NegativeSampler:
         self.rng = default_rng(seed)
         self.name = name
         self.check_link_existence = check_link_existence
+        self.nattemps = 500
 
     def sample(self, src: torch.Tensor, eval: bool = False, eval_seed: int = 9,  *args, **kwargs) -> torch.Tensor:
         rng = default_rng(eval_seed) if eval else self.rng
@@ -30,11 +31,11 @@ class NegativeSampler:
         if self.check_link_existence:
             for i in range(src.shape[0]):
                 j = 0
-                while self._exists(src[i].item(), neg_dst[i]) or j > 100:
+                while self._exists(src[i].item(), neg_dst[i]) or j <= self.nattemps:
                     neg_dst[i] = rng.choice(self.dst_nodes, size=1)
                     j += 1
-                if j > 100:
-                    print(f'NegativeSampler: after 100 attemps failed to find an unseen neg_dst for node {src[i]}')
+                if j > self.nattemps:
+                    print(f'NegativeSampler: after {self.nattemps} attemps failed to find an unseen neg_dst for node {src[i]}')
 
         return torch.tensor(neg_dst, dtype=torch.long, device=src.device)
 
